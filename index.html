@@ -308,15 +308,6 @@
                 <div class="input-container p-4">
                     <div class="max-w-4xl mx-auto">
                         <div class="flex gap-2 items-end">
-                            <button 
-                                id="attachBtn"
-                                class="p-3 rounded-lg transition"
-                                style="background-color: var(--bg-secondary); color: var(--text-primary);"
-                            >
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
-                                </svg>
-                            </button>
                             <textarea 
                                 id="messageInput" 
                                 rows="1"
@@ -334,7 +325,6 @@
                                 </svg>
                             </button>
                         </div>
-                        <div id="imagePreview" class="mt-2 flex gap-2"></div>
                     </div>
                 </div>
             </div>
@@ -368,11 +358,8 @@
                             <option value="deepseek/deepseek-r1:free">DeepSeek R1 (Strong reasoning)</option>
                             <option value="arcee-ai/trinity-large-preview:free">Trinity Large (Balanced)</option>
                             <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B</option>
-                            <option value="nvidia/nemotron-nano-2-vl:free">NVIDIA Nemotron Nano 2 VL (Multimodal, Free)</option>
-                            <option value="google/gemma-3-27b:free">Google Gemma 3 27B (Multimodal, Free)</option>
-                            <option value="stepfun/step-3.5-flash:free">StepFun Step 3.5 Flash (Multimodal, Free)</option>
                         </select>
-                        <p class="text-xs mt-1" style="color: var(--text-secondary);">Select multimodal models for image upload support</p>
+                        <p class="text-xs mt-1" style="color: var(--text-secondary);">Text-only models (no image upload)</p>
                     </div>
                     <div>
                         <label class="block mb-2 font-medium">System Prompt</label>
@@ -530,8 +517,7 @@
             if (chat && chat.messages.length > 0 && chat.name === 'New Chat') {
                 const firstUserMsg = chat.messages.find(m => m.role === 'user');
                 if (firstUserMsg) {
-                    let firstContent = Array.isArray(firstUserMsg.content) ? firstUserMsg.content.find(p => p.type === 'text')?.text || '' : firstUserMsg.content;
-                    chat.name = firstContent.substring(0, 30) + (firstContent.length > 30 ? '...' : '');
+                    chat.name = firstUserMsg.content.substring(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
                     saveToLocalStorage();
                     renderChatList();
                 }
@@ -541,8 +527,8 @@
         // =============================
         // MESSAGE HANDLING
         // =============================
-        async function sendMessage(textContent) {
-            if (!textContent.trim() && !currentImage) return;
+        async function sendMessage(content) {
+            if (!content.trim()) return;
             if (!state.apiKey) {
                 alert('Please set your OpenRouter API key in Settings');
                 return;
@@ -554,19 +540,8 @@
                 chat = getCurrentChat();
             }
 
-            let userMessageContent;
-            if (currentImage) {
-                userMessageContent = [
-                    { type: "text", text: textContent.trim() || "Analyze this image" },
-                    { type: "image_url", image_url: { url: currentImage.dataURL } }
-                ];
-            } else {
-                userMessageContent = textContent.trim();
-            }
-
-            const userMessage = { role: 'user', content: userMessageContent };
+            const userMessage = { role: 'user', content: content.trim() };
             chat.messages.push(userMessage);
-            removeImage();
             saveToLocalStorage();
             renderMessages();
             autoRenameChat(chat.id);
@@ -685,7 +660,7 @@
             chatList.innerHTML = state.chats.map(chat => {
                 const isActive = chat.id === state.currentChatId;
                 return `
-                    <div class="chat-item p-3 rounded-lg mb-1 flex items-center gap-2 \( {isActive ? 'active' : ''}" data-chat-id=" \){chat.id}">
+                    <div class="chat-item p-3 rounded-lg mb-1 flex items-center gap-2 ${isActive ? 'active' : ''}" data-chat-id="${chat.id}">
                         <div class="flex-1 truncate cursor-pointer" onclick="switchChat('${chat.id}')">
                             ${escapeHtml(chat.name)}
                         </div>
@@ -721,35 +696,26 @@
                 const alignment = isUser ? 'justify-end' : 'justify-start';
                 const bgColor = isUser ? 'var(--user-msg-bg)' : 'var(--ai-msg-bg)';
                 
-                let contentToRender;
+                let content = msg.content;
+
+                // Show thinking animation
                 if (msg.thinking) {
-                    contentToRender = '<div class="thinking-animation"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div></div>';
-                } else if (msg.streaming) {
-                    contentToRender = '<span class="typing-cursor">' + escapeHtml(msg.content) + '</span>';
-                } else {
-                    if (Array.isArray(msg.content)) {
-                        contentToRender = msg.content.map(part => {
-                            if (part.type === 'text') {
-                                return marked.parse(part.text);
-                            } else if (part.type === 'image_url') {
-                                return `<img src="${part.image_url.url}" class="message-image" alt="Uploaded image">`;
-                            }
-                            return '';
-                        }).join('');
-                    } else {
-                        try {
-                            contentToRender = marked.parse(msg.content);
-                        } catch (e) {
-                            contentToRender = escapeHtml(msg.content);
-                        }
+                    content = '<div class="thinking-animation"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div></div>';
+                } else if (!msg.streaming) {
+                    try {
+                        content = marked.parse(content);
+                    } catch (e) {
+                        content = escapeHtml(content);
                     }
+                } else {
+                    content = '<span class="typing-cursor">' + escapeHtml(content) + '</span>';
                 }
 
                 return `
                     <div class="message flex ${alignment} mb-4">
                         <div class="max-w-3xl px-4 py-3 rounded-lg" style="background-color: ${bgColor};">
                             <div class="prose prose-sm max-w-none" style="color: var(--text-primary);">
-                                ${contentToRender}
+                                ${content}
                             </div>
                         </div>
                     </div>
@@ -785,36 +751,6 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        // =============================
-        // IMAGE HANDLING
-        // =============================
-        let currentImage = null;
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = 'image/*';
-        fileInput.style.display = 'none';
-        document.body.appendChild(fileInput);
-
-        function renderImagePreview() {
-            const preview = document.getElementById('imagePreview');
-            if (currentImage) {
-                preview.innerHTML = `
-                    <div class="image-preview">
-                        <img src="\( {currentImage.dataURL}" alt=" \){currentImage.name}">
-                        <div class="image-preview-remove" onclick="removeImage()">×</div>
-                    </div>
-                `;
-            } else {
-                preview.innerHTML = '';
-            }
-        }
-
-        function removeImage() {
-            currentImage = null;
-            renderImagePreview();
-            fileInput.value = '';
         }
 
         // =============================
@@ -897,7 +833,6 @@
         window.switchChat = switchChat;
         window.deleteChat = deleteChat;
         window.openRenameModal = openRenameModal;
-        window.removeImage = removeImage;
 
         // =============================
         // EVENT LISTENERS
@@ -910,9 +845,11 @@
             document.getElementById('sendBtn').addEventListener('click', () => {
                 const input = document.getElementById('messageInput');
                 const content = input.value;
-                sendMessage(content);
-                input.value = '';
-                input.style.height = 'auto';
+                if (content.trim()) {
+                    sendMessage(content);
+                    input.value = '';
+                    input.style.height = 'auto';
+                }
             });
 
             // Enter to send
@@ -943,24 +880,6 @@
                 setTimeout(() => {
                     state.userIsTyping = false;
                 }, 500);
-            });
-
-            // Attach Image
-            document.getElementById('attachBtn').addEventListener('click', () => fileInput.click());
-
-            fileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                if (file.size > 4 * 1024 * 1024) {
-                    alert('Image too large (max 4MB)');
-                    return;
-                }
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    currentImage = { name: file.name, dataURL: ev.target.result };
-                    renderImagePreview();
-                };
-                reader.readAsDataURL(file);
             });
 
             // Settings
@@ -1027,4 +946,4 @@
         }
     </script>
 </body>
-</html>
+                        </html>
