@@ -160,6 +160,46 @@
             outline: none;
             border-color: #1a73e8;
         }
+
+        .image-preview {
+            position: relative;
+            display: inline-block;
+        }
+
+        .image-preview img {
+            max-width: 100px;
+            max-height: 100px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .image-preview-remove {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #ef4444;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .message-image {
+            max-width: 300px;
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+
+        /* Prevent scroll jumping */
+        .messages-locked {
+            overflow: hidden !important;
+        }
     </style>
 </head>
 <body class="light">
@@ -217,7 +257,18 @@
                 <!-- Input Area -->
                 <div class="input-container p-4">
                     <div class="max-w-4xl mx-auto">
+                        <!-- Image Preview Area -->
+                        <div id="imagePreviewContainer" class="mb-2 flex gap-2 flex-wrap" style="display: none;"></div>
+                        
                         <div class="flex gap-2 items-end">
+                            <!-- Image Upload Button -->
+                            <label for="imageUpload" class="p-3 rounded-lg cursor-pointer transition hover:bg-opacity-10 hover:bg-black" style="background-color: var(--bg-secondary);">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <input type="file" id="imageUpload" accept="image/*" multiple style="display: none;">
+                            </label>
+                            
                             <textarea 
                                 id="messageInput" 
                                 rows="1"
@@ -262,10 +313,11 @@
                         <input 
                             type="text" 
                             id="modelInput" 
-                            placeholder="deepseek/deepseek-r1:free"
+                            placeholder="arcee-ai/trinity-large-preview:free"
                             class="w-full p-3 rounded-lg"
                             style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary);"
                         >
+                        <p class="text-xs mt-1" style="color: var(--text-secondary);">For vision: google/gemini-2.0-flash-exp:free</p>
                     </div>
                     <div>
                         <label class="block mb-2 font-medium">System Prompt</label>
@@ -324,10 +376,13 @@
             chats: [],
             currentChatId: null,
             apiKey: '',
-            model: 'deepseek/deepseek-r1:free',
+            model: 'arcee-ai/trinity-large-preview:free',
             systemPrompt: 'You are a helpful assistant.',
             darkMode: false,
-            renamingChatId: null
+            renamingChatId: null,
+            uploadedImages: [],
+            isStreaming: false,
+            userIsTyping: false
         };
 
         // =============================
@@ -358,13 +413,61 @@
                     const data = JSON.parse(saved);
                     state.chats = data.chats || [];
                     state.apiKey = data.apiKey || '';
-                    state.model = data.model || 'deepseek/deepseek-r1:free';
+                    state.model = data.model || 'arcee-ai/trinity-large-preview:free';
                     state.systemPrompt = data.systemPrompt || 'You are a helpful assistant.';
                     state.darkMode = data.darkMode || false;
                 }
             } catch (e) {
                 console.error('Failed to load from localStorage:', e);
             }
+        }
+
+        // =============================
+        // IMAGE HANDLING
+        // =============================
+        function handleImageUpload(files) {
+            Array.from(files).forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const imageData = e.target.result;
+                        state.uploadedImages.push({
+                            id: generateId(),
+                            data: imageData,
+                            type: file.type
+                        });
+                        renderImagePreviews();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        function removeImage(imageId) {
+            state.uploadedImages = state.uploadedImages.filter(img => img.id !== imageId);
+            renderImagePreviews();
+        }
+
+        function renderImagePreviews() {
+            const container = document.getElementById('imagePreviewContainer');
+            if (state.uploadedImages.length === 0) {
+                container.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+
+            container.style.display = 'flex';
+            container.innerHTML = state.uploadedImages.map(img => `
+                <div class="image-preview">
+                    <img src="${img.data}" alt="Upload preview">
+                    <div class="image-preview-remove" onclick="removeImage('${img.id}')">×</div>
+                </div>
+            `).join('');
+        }
+
+        function clearUploadedImages() {
+            state.uploadedImages = [];
+            renderImagePreviews();
         }
 
         // =============================
@@ -387,6 +490,7 @@
 
         function switchChat(chatId) {
             state.currentChatId = chatId;
+            clearUploadedImages();
             renderMessages();
             renderChatList();
             closeMobileSidebar();
@@ -421,7 +525,10 @@
             if (chat && chat.messages.length > 0 && chat.name === 'New Chat') {
                 const firstUserMsg = chat.messages.find(m => m.role === 'user');
                 if (firstUserMsg) {
-                    chat.name = firstUserMsg.content.substring(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
+                    const textContent = typeof firstUserMsg.content === 'string' 
+                        ? firstUserMsg.content 
+                        : firstUserMsg.content.find(c => c.type === 'text')?.text || 'Chat';
+                    chat.name = textContent.substring(0, 30) + (textContent.length > 30 ? '...' : '');
                     saveToLocalStorage();
                     renderChatList();
                 }
@@ -432,7 +539,7 @@
         // MESSAGE HANDLING
         // =============================
         async function sendMessage(content) {
-            if (!content.trim()) return;
+            if (!content.trim() && state.uploadedImages.length === 0) return;
             if (!state.apiKey) {
                 alert('Please set your OpenRouter API key in Settings');
                 return;
@@ -444,15 +551,36 @@
                 chat = getCurrentChat();
             }
 
-            const userMessage = { role: 'user', content: content.trim() };
+            // Build message content
+            let messageContent;
+            if (state.uploadedImages.length > 0) {
+                messageContent = [
+                    { type: 'text', text: content.trim() || 'What\'s in this image?' },
+                    ...state.uploadedImages.map(img => ({
+                        type: 'image_url',
+                        image_url: { url: img.data }
+                    }))
+                ];
+            } else {
+                messageContent = content.trim();
+            }
+
+            const userMessage = { 
+                role: 'user', 
+                content: messageContent,
+                images: state.uploadedImages.length > 0 ? [...state.uploadedImages] : null
+            };
+            
             chat.messages.push(userMessage);
             saveToLocalStorage();
             renderMessages();
             autoRenameChat(chat.id);
+            clearUploadedImages();
 
             const aiMessageId = generateId();
             const aiMessage = { role: 'assistant', content: '', id: aiMessageId, streaming: true };
             chat.messages.push(aiMessage);
+            state.isStreaming = true;
             renderMessages();
 
             try {
@@ -460,6 +588,7 @@
             } catch (error) {
                 aiMessage.content = 'Error: ' + error.message;
                 aiMessage.streaming = false;
+                state.isStreaming = false;
                 saveToLocalStorage();
                 renderMessages();
             }
@@ -472,12 +601,21 @@
             const aiMessage = chat.messages.find(m => m.id === messageId);
             if (!aiMessage) return;
 
+            // Convert messages to API format
             const apiMessages = [
                 { role: 'system', content: state.systemPrompt },
-                ...messages.filter(m => m.role !== 'assistant' || !m.streaming).map(m => ({
-                    role: m.role,
-                    content: m.content
-                }))
+                ...messages.filter(m => m.role !== 'assistant' || !m.streaming).map(m => {
+                    if (m.role === 'user' && m.images) {
+                        return {
+                            role: 'user',
+                            content: m.content
+                        };
+                    }
+                    return {
+                        role: m.role,
+                        content: typeof m.content === 'string' ? m.content : m.content
+                    };
+                })
             ];
 
             const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -496,7 +634,8 @@
             });
 
             if (!response.ok) {
-                throw new Error('API request failed: ' + response.statusText);
+                const errorText = await response.text();
+                throw new Error('API request failed: ' + response.statusText + ' - ' + errorText);
             }
 
             const reader = response.body.getReader();
@@ -522,7 +661,9 @@
                             if (delta && delta.content) {
                                 aiMessage.content += delta.content;
                                 renderMessages();
-                                scrollToBottom();
+                                if (!state.userIsTyping) {
+                                    scrollToBottom();
+                                }
                             }
                         } catch (e) {
                             console.error('Parse error:', e);
@@ -532,6 +673,7 @@
             }
 
             aiMessage.streaming = false;
+            state.isStreaming = false;
             saveToLocalStorage();
             renderMessages();
         }
@@ -587,7 +729,15 @@
                 const alignment = isUser ? 'justify-end' : 'justify-start';
                 const bgColor = isUser ? 'var(--user-msg-bg)' : 'var(--ai-msg-bg)';
                 
-                let content = msg.content;
+                let textContent = '';
+                if (typeof msg.content === 'string') {
+                    textContent = msg.content;
+                } else if (Array.isArray(msg.content)) {
+                    const textPart = msg.content.find(c => c.type === 'text');
+                    textContent = textPart ? textPart.text : '';
+                }
+
+                let content = textContent;
                 if (!msg.streaming) {
                     try {
                         content = marked.parse(content);
@@ -598,9 +748,18 @@
                     content = '<span class="typing-cursor">' + escapeHtml(content) + '</span>';
                 }
 
+                // Add images if present
+                let imageHtml = '';
+                if (msg.images && msg.images.length > 0) {
+                    imageHtml = msg.images.map(img => 
+                        `<img src="${img.data}" class="message-image" alt="Uploaded image">`
+                    ).join('');
+                }
+
                 return `
                     <div class="message flex ${alignment} mb-4">
                         <div class="max-w-3xl px-4 py-3 rounded-lg" style="background-color: ${bgColor};">
+                            ${imageHtml}
                             <div class="prose prose-sm max-w-none" style="color: var(--text-primary);">
                                 ${content}
                             </div>
@@ -610,7 +769,9 @@
             }).join('');
 
             highlightCode();
-            scrollToBottom();
+            if (!state.userIsTyping) {
+                scrollToBottom();
+            }
         }
 
         function highlightCode() {
@@ -625,8 +786,10 @@
 
         function scrollToBottom() {
             const container = document.getElementById('messagesContainer');
-            if (container) {
-                container.scrollTop = container.scrollHeight;
+            if (container && !state.userIsTyping) {
+                requestAnimationFrame(() => {
+                    container.scrollTop = container.scrollHeight;
+                });
             }
         }
 
@@ -670,7 +833,7 @@
 
         function saveSettings() {
             state.apiKey = document.getElementById('apiKeyInput').value.trim();
-            state.model = document.getElementById('modelInput').value.trim() || 'deepseek/deepseek-r1:free';
+            state.model = document.getElementById('modelInput').value.trim() || 'arcee-ai/trinity-large-preview:free';
             state.systemPrompt = document.getElementById('systemPromptInput').value.trim() || 'You are a helpful assistant.';
             saveToLocalStorage();
             closeSettingsModal();
@@ -712,6 +875,12 @@
             overlay.classList.remove('active');
         }
 
+        // Make functions globally accessible
+        window.switchChat = switchChat;
+        window.deleteChat = deleteChat;
+        window.openRenameModal = openRenameModal;
+        window.removeImage = removeImage;
+
         // =============================
         // EVENT LISTENERS
         // =============================
@@ -719,15 +888,21 @@
             // New Chat
             document.getElementById('newChatBtn').addEventListener('click', createNewChat);
 
+            // Image Upload
+            document.getElementById('imageUpload').addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleImageUpload(e.target.files);
+                    e.target.value = ''; // Reset input
+                }
+            });
+
             // Send Message
             document.getElementById('sendBtn').addEventListener('click', () => {
                 const input = document.getElementById('messageInput');
                 const content = input.value;
-                if (content.trim()) {
-                    sendMessage(content);
-                    input.value = '';
-                    input.style.height = 'auto';
-                }
+                sendMessage(content);
+                input.value = '';
+                input.style.height = 'auto';
             });
 
             // Enter to send
@@ -738,10 +913,27 @@
                 }
             });
 
-            // Auto-resize textarea
+            // Track when user is typing
             document.getElementById('messageInput').addEventListener('input', (e) => {
+                state.userIsTyping = true;
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                
+                // Reset typing flag after 1 second of no input
+                clearTimeout(window.typingTimeout);
+                window.typingTimeout = setTimeout(() => {
+                    state.userIsTyping = false;
+                }, 1000);
+            });
+
+            document.getElementById('messageInput').addEventListener('focus', () => {
+                state.userIsTyping = true;
+            });
+
+            document.getElementById('messageInput').addEventListener('blur', () => {
+                setTimeout(() => {
+                    state.userIsTyping = false;
+                }, 500);
             });
 
             // Settings
@@ -767,17 +959,7 @@
             document.getElementById('renameModal').addEventListener('click', (e) => {
                 if (e.target.id === 'renameModal') closeRenameModal();
             });
-
-            // Prevent scrolling issues on mobile
-            document.getElementById('messageInput').addEventListener('focus', () => {
-                setTimeout(() => scrollToBottom(), 300);
-            });
         }
-
-        // Make functions globally accessible
-        window.switchChat = switchChat;
-        window.deleteChat = deleteChat;
-        window.openRenameModal = openRenameModal;
 
         // =============================
         // INITIALIZATION
@@ -818,4 +1000,4 @@
         }
     </script>
 </body>
-</html>
+                </html>
