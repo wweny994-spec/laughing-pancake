@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Universal AI Chat Interface</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
@@ -15,9 +15,15 @@
             box-sizing: border-box;
         }
         
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+        }
+
         body {
             font-family: 'Google Sans', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow-x: hidden;
         }
 
         .dark {
@@ -61,6 +67,18 @@
             z-index: 9999;
         }
 
+        #app {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
         .sidebar {
             background-color: var(--bg-secondary);
             border-right: 1px solid var(--border-color);
@@ -96,6 +114,30 @@
         @keyframes blink {
             0%, 50% { opacity: 1; }
             51%, 100% { opacity: 0; }
+        }
+
+        /* Thinking Animation */
+        .thinking-animation {
+            display: inline-flex;
+            gap: 4px;
+            padding: 12px 16px;
+        }
+
+        .thinking-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-secondary);
+            animation: thinking 1.4s infinite ease-in-out;
+        }
+
+        .thinking-dot:nth-child(1) { animation-delay: 0s; }
+        .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+        .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes thinking {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+            30% { transform: translateY(-10px); opacity: 1; }
         }
 
         pre code {
@@ -196,16 +238,24 @@
             margin-top: 8px;
         }
 
-        /* Prevent scroll jumping */
-        .messages-locked {
-            overflow: hidden !important;
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        #messagesContainer {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
     </style>
 </head>
 <body class="light">
     <div id="loading">Loading App...</div>
 
-    <div id="app" style="display: none;" class="min-h-screen flex flex-col">
+    <div id="app" style="display: none;">
         <!-- Mobile Header -->
         <div class="md:hidden flex items-center p-3 border-b" style="border-color: var(--border-color); background-color: var(--bg-secondary);">
             <button id="mobileMenuBtn" class="p-2 rounded-lg hover:bg-opacity-10 hover:bg-black">
@@ -216,7 +266,7 @@
             <h1 class="ml-3 text-lg font-semibold">AI Chat</h1>
         </div>
 
-        <div class="flex flex-1 overflow-hidden">
+        <div class="main-container">
             <!-- Sidebar Overlay (Mobile) -->
             <div id="sidebarOverlay" class="sidebar-overlay"></div>
 
@@ -248,27 +298,25 @@
             </div>
 
             <!-- Main Chat Area -->
-            <div class="flex-1 flex flex-col">
+            <div class="flex-1 flex flex-col" style="min-width: 0;">
                 <!-- Messages -->
-                <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 md:p-6">
+                <div id="messagesContainer" class="flex-1 p-4 md:p-6">
                     <div id="messages" class="max-w-4xl mx-auto"></div>
                 </div>
 
                 <!-- Input Area -->
                 <div class="input-container p-4">
                     <div class="max-w-4xl mx-auto">
-                        <!-- Image Preview Area -->
-                        <div id="imagePreviewContainer" class="mb-2 flex gap-2 flex-wrap" style="display: none;"></div>
-                        
                         <div class="flex gap-2 items-end">
-                            <!-- Image Upload Button -->
-                            <label for="imageUpload" class="p-3 rounded-lg cursor-pointer transition hover:bg-opacity-10 hover:bg-black" style="background-color: var(--bg-secondary);">
+                            <button 
+                                id="attachBtn"
+                                class="p-3 rounded-lg transition"
+                                style="background-color: var(--bg-secondary); color: var(--text-primary);"
+                            >
                                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
                                 </svg>
-                                <input type="file" id="imageUpload" accept="image/*" multiple style="display: none;">
-                            </label>
-                            
+                            </button>
                             <textarea 
                                 id="messageInput" 
                                 rows="1"
@@ -286,6 +334,7 @@
                                 </svg>
                             </button>
                         </div>
+                        <div id="imagePreview" class="mt-2 flex gap-2"></div>
                     </div>
                 </div>
             </div>
@@ -310,14 +359,20 @@
                     </div>
                     <div>
                         <label class="block mb-2 font-medium">Model</label>
-                        <input 
-                            type="text" 
+                        <select 
                             id="modelInput" 
-                            placeholder="arcee-ai/trinity-large-preview:free"
                             class="w-full p-3 rounded-lg"
                             style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary);"
                         >
-                        <p class="text-xs mt-1" style="color: var(--text-secondary);">For vision: google/gemini-2.0-flash-exp:free</p>
+                            <option value="qwen/qwen-coder-32b-instruct:free">Qwen Coder (Best for Roblox)</option>
+                            <option value="deepseek/deepseek-r1:free">DeepSeek R1 (Strong reasoning)</option>
+                            <option value="arcee-ai/trinity-large-preview:free">Trinity Large (Balanced)</option>
+                            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B</option>
+                            <option value="nvidia/nemotron-nano-2-vl:free">NVIDIA Nemotron Nano 2 VL (Multimodal, Free)</option>
+                            <option value="google/gemma-3-27b:free">Google Gemma 3 27B (Multimodal, Free)</option>
+                            <option value="stepfun/step-3.5-flash:free">StepFun Step 3.5 Flash (Multimodal, Free)</option>
+                        </select>
+                        <p class="text-xs mt-1" style="color: var(--text-secondary);">Select multimodal models for image upload support</p>
                     </div>
                     <div>
                         <label class="block mb-2 font-medium">System Prompt</label>
@@ -376,11 +431,10 @@
             chats: [],
             currentChatId: null,
             apiKey: '',
-            model: 'arcee-ai/trinity-large-preview:free',
-            systemPrompt: 'You are a helpful assistant.',
+            model: 'qwen/qwen-coder-32b-instruct:free',
+            systemPrompt: 'You are an expert Roblox game developer and Lua programmer. You specialize in writing clean, efficient Luau code for Roblox Studio. Provide complete working code examples with explanations.',
             darkMode: false,
             renamingChatId: null,
-            uploadedImages: [],
             isStreaming: false,
             userIsTyping: false
         };
@@ -413,61 +467,13 @@
                     const data = JSON.parse(saved);
                     state.chats = data.chats || [];
                     state.apiKey = data.apiKey || '';
-                    state.model = data.model || 'arcee-ai/trinity-large-preview:free';
-                    state.systemPrompt = data.systemPrompt || 'You are a helpful assistant.';
+                    state.model = data.model || 'qwen/qwen-coder-32b-instruct:free';
+                    state.systemPrompt = data.systemPrompt || 'You are an expert Roblox game developer and Lua programmer. You specialize in writing clean, efficient Luau code for Roblox Studio. Provide complete working code examples with explanations.';
                     state.darkMode = data.darkMode || false;
                 }
             } catch (e) {
                 console.error('Failed to load from localStorage:', e);
             }
-        }
-
-        // =============================
-        // IMAGE HANDLING
-        // =============================
-        function handleImageUpload(files) {
-            Array.from(files).forEach(file => {
-                if (file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        const imageData = e.target.result;
-                        state.uploadedImages.push({
-                            id: generateId(),
-                            data: imageData,
-                            type: file.type
-                        });
-                        renderImagePreviews();
-                    };
-                    reader.readAsDataURL(file);
-                }
-            });
-        }
-
-        function removeImage(imageId) {
-            state.uploadedImages = state.uploadedImages.filter(img => img.id !== imageId);
-            renderImagePreviews();
-        }
-
-        function renderImagePreviews() {
-            const container = document.getElementById('imagePreviewContainer');
-            if (state.uploadedImages.length === 0) {
-                container.style.display = 'none';
-                container.innerHTML = '';
-                return;
-            }
-
-            container.style.display = 'flex';
-            container.innerHTML = state.uploadedImages.map(img => `
-                <div class="image-preview">
-                    <img src="${img.data}" alt="Upload preview">
-                    <div class="image-preview-remove" onclick="removeImage('${img.id}')">×</div>
-                </div>
-            `).join('');
-        }
-
-        function clearUploadedImages() {
-            state.uploadedImages = [];
-            renderImagePreviews();
         }
 
         // =============================
@@ -490,7 +496,6 @@
 
         function switchChat(chatId) {
             state.currentChatId = chatId;
-            clearUploadedImages();
             renderMessages();
             renderChatList();
             closeMobileSidebar();
@@ -525,10 +530,8 @@
             if (chat && chat.messages.length > 0 && chat.name === 'New Chat') {
                 const firstUserMsg = chat.messages.find(m => m.role === 'user');
                 if (firstUserMsg) {
-                    const textContent = typeof firstUserMsg.content === 'string' 
-                        ? firstUserMsg.content 
-                        : firstUserMsg.content.find(c => c.type === 'text')?.text || 'Chat';
-                    chat.name = textContent.substring(0, 30) + (textContent.length > 30 ? '...' : '');
+                    let firstContent = Array.isArray(firstUserMsg.content) ? firstUserMsg.content.find(p => p.type === 'text')?.text || '' : firstUserMsg.content;
+                    chat.name = firstContent.substring(0, 30) + (firstContent.length > 30 ? '...' : '');
                     saveToLocalStorage();
                     renderChatList();
                 }
@@ -538,8 +541,8 @@
         // =============================
         // MESSAGE HANDLING
         // =============================
-        async function sendMessage(content) {
-            if (!content.trim() && state.uploadedImages.length === 0) return;
+        async function sendMessage(textContent) {
+            if (!textContent.trim() && !currentImage) return;
             if (!state.apiKey) {
                 alert('Please set your OpenRouter API key in Settings');
                 return;
@@ -551,34 +554,25 @@
                 chat = getCurrentChat();
             }
 
-            // Build message content
-            let messageContent;
-            if (state.uploadedImages.length > 0) {
-                messageContent = [
-                    { type: 'text', text: content.trim() || 'What\'s in this image?' },
-                    ...state.uploadedImages.map(img => ({
-                        type: 'image_url',
-                        image_url: { url: img.data }
-                    }))
+            let userMessageContent;
+            if (currentImage) {
+                userMessageContent = [
+                    { type: "text", text: textContent.trim() || "Analyze this image" },
+                    { type: "image_url", image_url: { url: currentImage.dataURL } }
                 ];
             } else {
-                messageContent = content.trim();
+                userMessageContent = textContent.trim();
             }
 
-            const userMessage = { 
-                role: 'user', 
-                content: messageContent,
-                images: state.uploadedImages.length > 0 ? [...state.uploadedImages] : null
-            };
-            
+            const userMessage = { role: 'user', content: userMessageContent };
             chat.messages.push(userMessage);
+            removeImage();
             saveToLocalStorage();
             renderMessages();
             autoRenameChat(chat.id);
-            clearUploadedImages();
 
             const aiMessageId = generateId();
-            const aiMessage = { role: 'assistant', content: '', id: aiMessageId, streaming: true };
+            const aiMessage = { role: 'assistant', content: '', id: aiMessageId, streaming: true, thinking: true };
             chat.messages.push(aiMessage);
             state.isStreaming = true;
             renderMessages();
@@ -588,6 +582,7 @@
             } catch (error) {
                 aiMessage.content = 'Error: ' + error.message;
                 aiMessage.streaming = false;
+                aiMessage.thinking = false;
                 state.isStreaming = false;
                 saveToLocalStorage();
                 renderMessages();
@@ -601,21 +596,12 @@
             const aiMessage = chat.messages.find(m => m.id === messageId);
             if (!aiMessage) return;
 
-            // Convert messages to API format
             const apiMessages = [
                 { role: 'system', content: state.systemPrompt },
-                ...messages.filter(m => m.role !== 'assistant' || !m.streaming).map(m => {
-                    if (m.role === 'user' && m.images) {
-                        return {
-                            role: 'user',
-                            content: m.content
-                        };
-                    }
-                    return {
-                        role: m.role,
-                        content: typeof m.content === 'string' ? m.content : m.content
-                    };
-                })
+                ...messages.filter(m => m.role !== 'assistant' || !m.streaming).map(m => ({
+                    role: m.role,
+                    content: m.content
+                }))
             ];
 
             const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -635,12 +621,13 @@
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error('API request failed: ' + response.statusText + ' - ' + errorText);
+                throw new Error(response.statusText);
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let firstChunk = true;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -659,6 +646,10 @@
                             const json = JSON.parse(data);
                             const delta = json.choices && json.choices[0] && json.choices[0].delta;
                             if (delta && delta.content) {
+                                if (firstChunk) {
+                                    aiMessage.thinking = false;
+                                    firstChunk = false;
+                                }
                                 aiMessage.content += delta.content;
                                 renderMessages();
                                 if (!state.userIsTyping) {
@@ -673,6 +664,7 @@
             }
 
             aiMessage.streaming = false;
+            aiMessage.thinking = false;
             state.isStreaming = false;
             saveToLocalStorage();
             renderMessages();
@@ -693,7 +685,7 @@
             chatList.innerHTML = state.chats.map(chat => {
                 const isActive = chat.id === state.currentChatId;
                 return `
-                    <div class="chat-item p-3 rounded-lg mb-1 flex items-center gap-2 ${isActive ? 'active' : ''}" data-chat-id="${chat.id}">
+                    <div class="chat-item p-3 rounded-lg mb-1 flex items-center gap-2 \( {isActive ? 'active' : ''}" data-chat-id=" \){chat.id}">
                         <div class="flex-1 truncate cursor-pointer" onclick="switchChat('${chat.id}')">
                             ${escapeHtml(chat.name)}
                         </div>
@@ -729,39 +721,35 @@
                 const alignment = isUser ? 'justify-end' : 'justify-start';
                 const bgColor = isUser ? 'var(--user-msg-bg)' : 'var(--ai-msg-bg)';
                 
-                let textContent = '';
-                if (typeof msg.content === 'string') {
-                    textContent = msg.content;
-                } else if (Array.isArray(msg.content)) {
-                    const textPart = msg.content.find(c => c.type === 'text');
-                    textContent = textPart ? textPart.text : '';
-                }
-
-                let content = textContent;
-                if (!msg.streaming) {
-                    try {
-                        content = marked.parse(content);
-                    } catch (e) {
-                        content = escapeHtml(content);
-                    }
+                let contentToRender;
+                if (msg.thinking) {
+                    contentToRender = '<div class="thinking-animation"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div></div>';
+                } else if (msg.streaming) {
+                    contentToRender = '<span class="typing-cursor">' + escapeHtml(msg.content) + '</span>';
                 } else {
-                    content = '<span class="typing-cursor">' + escapeHtml(content) + '</span>';
-                }
-
-                // Add images if present
-                let imageHtml = '';
-                if (msg.images && msg.images.length > 0) {
-                    imageHtml = msg.images.map(img => 
-                        `<img src="${img.data}" class="message-image" alt="Uploaded image">`
-                    ).join('');
+                    if (Array.isArray(msg.content)) {
+                        contentToRender = msg.content.map(part => {
+                            if (part.type === 'text') {
+                                return marked.parse(part.text);
+                            } else if (part.type === 'image_url') {
+                                return `<img src="${part.image_url.url}" class="message-image" alt="Uploaded image">`;
+                            }
+                            return '';
+                        }).join('');
+                    } else {
+                        try {
+                            contentToRender = marked.parse(msg.content);
+                        } catch (e) {
+                            contentToRender = escapeHtml(msg.content);
+                        }
+                    }
                 }
 
                 return `
                     <div class="message flex ${alignment} mb-4">
                         <div class="max-w-3xl px-4 py-3 rounded-lg" style="background-color: ${bgColor};">
-                            ${imageHtml}
                             <div class="prose prose-sm max-w-none" style="color: var(--text-primary);">
-                                ${content}
+                                ${contentToRender}
                             </div>
                         </div>
                     </div>
@@ -800,6 +788,36 @@
         }
 
         // =============================
+        // IMAGE HANDLING
+        // =============================
+        let currentImage = null;
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.style.display = 'none';
+        document.body.appendChild(fileInput);
+
+        function renderImagePreview() {
+            const preview = document.getElementById('imagePreview');
+            if (currentImage) {
+                preview.innerHTML = `
+                    <div class="image-preview">
+                        <img src="\( {currentImage.dataURL}" alt=" \){currentImage.name}">
+                        <div class="image-preview-remove" onclick="removeImage()">×</div>
+                    </div>
+                `;
+            } else {
+                preview.innerHTML = '';
+            }
+        }
+
+        function removeImage() {
+            currentImage = null;
+            renderImagePreview();
+            fileInput.value = '';
+        }
+
+        // =============================
         // UI INTERACTIONS
         // =============================
         function toggleDarkMode() {
@@ -833,7 +851,7 @@
 
         function saveSettings() {
             state.apiKey = document.getElementById('apiKeyInput').value.trim();
-            state.model = document.getElementById('modelInput').value.trim() || 'arcee-ai/trinity-large-preview:free';
+            state.model = document.getElementById('modelInput').value.trim() || 'qwen/qwen-coder-32b-instruct:free';
             state.systemPrompt = document.getElementById('systemPromptInput').value.trim() || 'You are a helpful assistant.';
             saveToLocalStorage();
             closeSettingsModal();
@@ -888,14 +906,6 @@
             // New Chat
             document.getElementById('newChatBtn').addEventListener('click', createNewChat);
 
-            // Image Upload
-            document.getElementById('imageUpload').addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    handleImageUpload(e.target.files);
-                    e.target.value = ''; // Reset input
-                }
-            });
-
             // Send Message
             document.getElementById('sendBtn').addEventListener('click', () => {
                 const input = document.getElementById('messageInput');
@@ -919,7 +929,6 @@
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
                 
-                // Reset typing flag after 1 second of no input
                 clearTimeout(window.typingTimeout);
                 window.typingTimeout = setTimeout(() => {
                     state.userIsTyping = false;
@@ -934,6 +943,24 @@
                 setTimeout(() => {
                     state.userIsTyping = false;
                 }, 500);
+            });
+
+            // Attach Image
+            document.getElementById('attachBtn').addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (file.size > 4 * 1024 * 1024) {
+                    alert('Image too large (max 4MB)');
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    currentImage = { name: file.name, dataURL: ev.target.result };
+                    renderImagePreview();
+                };
+                reader.readAsDataURL(file);
             });
 
             // Settings
@@ -1000,4 +1027,4 @@
         }
     </script>
 </body>
-                </html>
+</html>
